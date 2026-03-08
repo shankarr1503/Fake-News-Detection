@@ -1,0 +1,9 @@
+data/news.csv
+data/processed_news.csv
+models/*.pkl
+models/ai_model/
+results/
+logs/
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
