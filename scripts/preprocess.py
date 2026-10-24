@@ -1,53 +1,38 @@
+import sys
+
 import pandas as pd
-import re
-import string
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
-import os
 
-# Download necessary NLTK data
-nltk.download('punkt')
-nltk.download('stopwords')
+from common.data import LABEL_FAKE, LABEL_REAL
+from common.paths import PROCESSED_DATA, RAW_DATA
+from common.text import clean_text, combine_title_text
 
-# Pre-load stopwords
-STOP_WORDS = set(stopwords.words('english'))
 
-def clean_text_fast(text):
-    if not isinstance(text, str):
-        return ""
-    # Lowercase and remove punctuation/numbers in one go
-    text = text.lower()
-    text = re.sub(r'[%s\d+]' % re.escape(string.punctuation), '', text)
-    # Tokenize and remove stopwords
-    tokens = text.split()
-    filtered_tokens = [word for word in tokens if word not in STOP_WORDS]
-    
-    return " ".join(filtered_tokens)
+def main():
+    if not RAW_DATA.exists():
+        sys.exit(f"{RAW_DATA} not found. Run `python -m scripts.download_data` first.")
+
+    print("Loading dataset...")
+    df = pd.read_csv(RAW_DATA)
+    print(f"Dataset loaded. Shape: {df.shape}")
+
+    missing = {"title", "text", "label"} - set(df.columns)
+    if missing:
+        sys.exit(f"Dataset is missing required columns: {sorted(missing)}")
+
+    df["total_content"] = [combine_title_text(t, x) for t, x in zip(df["title"], df["text"])]
+
+    print("Cleaning text...")
+    df["cleaned_content"] = df["total_content"].apply(clean_text)
+
+    unknown = set(df["label"].dropna()) - {"REAL", "FAKE"}
+    if unknown:
+        sys.exit(f"Unexpected label values: {sorted(unknown)}")
+    df["label_num"] = df["label"].map({"REAL": LABEL_REAL, "FAKE": LABEL_FAKE})
+
+    print("Saving processed data...")
+    df.to_csv(PROCESSED_DATA, index=False)
+    print("Preprocessing complete!")
+
 
 if __name__ == "__main__":
-    try:
-        print("Checking for news.csv...")
-        if not os.path.exists("data/news.csv"):
-            print("news.csv not found!")
-            exit(1)
-            
-        print("Loading dataset...")
-        df = pd.read_csv("data/news.csv")
-        print(f"Dataset loaded. Shape: {df.shape}")
-        
-        # Combine title and text
-        df['total_content'] = df['title'].fillna('') + " " + df['text'].fillna('')
-        
-        print("Cleaning text...")
-        df['cleaned_content'] = df['total_content'].apply(clean_text_fast)
-        
-        # Map labels
-        if 'label' in df.columns:
-            df['label_num'] = df['label'].apply(lambda x: 1 if x == 'REAL' else 0)
-        
-        print("Saving processed data...")
-        df.to_csv("data/processed_news.csv", index=False)
-        print("Preprocessing complete!")
-    except Exception as e:
-        print(f"Error: {e}")
+    main()

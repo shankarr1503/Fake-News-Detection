@@ -1,83 +1,129 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import pickle
-import torch
-from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification
-import re
-import string
-import nltk
-from nltk.corpus import stopwords
-import uvicorn
+import logging
 import os
+from contextlib import asynccontextmanager
+from typing import Annotated, Literal, Optional
 
-app = FastAPI()
+import joblib
+import torch
+import uvicorn
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, StringConstraints
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-# Load ML model and vectorizer
-try:
-    with open("models/ml_model.pkl", "rb") as f:
-        ml_model = pickle.load(f)
-    with open("models/tfidf_vectorizer.pkl", "rb") as f:
-        tfidf_vectorizer = pickle.load(f)
-    print("ML models loaded successfully.")
-except Exception as e:
-    print(f"Error loading ML models: {e}")
+from common.data import LABEL_REAL
+from common.paths import AI_MODEL_DIR, ML_MODEL, ROOT
+from common.text import clean_text, combine_title_text
 
-# Load AI model and tokenizer
-try:
-    ai_model_path = "models/ai_model"
-    if os.path.exists(ai_model_path):
-        ai_tokenizer = DistilBertTokenizerFast.from_pretrained(ai_model_path)
-        ai_model = DistilBertForSequenceClassification.from_pretrained(ai_model_path)
+# uvicorn configures this logger, so messages show up in the server output.
+logger = logging.getLogger("uvicorn.error")
+
+# Populated by load_models() at startup; None means that model is unavailable.
+ml_model = None
+ai_tokenizer = None
+ai_model = None
+
+
+def load_models():
+    global ml_model, ai_tokenizer, ai_model
+
+    # Only load model files you produced yourself: joblib/pickle can execute code on load.
+    try:
+        ml_model = joblib.load(ML_MODEL)
+        logger.info("ML model loaded from %s", ML_MODEL)
+    except Exception:
+        ml_model = None
+        logger.exception("Could not load ML model from %s; ML predictions unavailable", ML_MODEL)
+
+    if not AI_MODEL_DIR.exists():
+        logger.warning("%s not found; AI predictions unavailable", AI_MODEL_DIR)
+        return
+    try:
+        ai_tokenizer = AutoTokenizer.from_pretrained(AI_MODEL_DIR)
+        ai_model = AutoModelForSequenceClassification.from_pretrained(AI_MODEL_DIR)
         ai_model.eval()
-        print("AI models loaded successfully.")
-    else:
-        print("AI model path not found. AI predictions will be unavailable.")
-except Exception as e:
-    print(f"Error loading AI models: {e}")
+        logger.info("AI model loaded from %s", AI_MODEL_DIR)
+    except Exception:
+        ai_tokenizer = ai_model = None
+        logger.exception("Could not load AI model from %s; AI predictions unavailable", AI_MODEL_DIR)
 
-STOP_WORDS = set(stopwords.words('english'))
 
-def clean_text_fast(text):
-    if not isinstance(text, str):
-        return ""
-    text = text.lower()
-    text = re.sub(r'[%s\d+]' % re.escape(string.punctuation), '', text)
-    tokens = text.split()
-    filtered_tokens = [word for word in tokens if word not in STOP_WORDS]
-    return " ".join(filtered_tokens)
+@asynccontextmanager
+async def lifespan(app):
+    load_models()
+    yield
+
+
+app = FastAPI(title="Fake News Detection API", lifespan=lifespan)
+
+# Comma-separated list of allowed origins, e.g. "http://localhost:5500". "*" allows any.
+cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
+
 
 class NewsInput(BaseModel):
-    title: str
-    text: str
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1_000)]
+    text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100_000)]
 
-@app.post("/predict")
-async def predict(news: NewsInput):
-    combined_text = f"{news.title} {news.text}"
-    cleaned_text = clean_text_fast(combined_text)
-    
-    # ML Prediction
-    ml_pred = "Unknown"
-    ml_prob = 0.0
-    if ml_model and tfidf_vectorizer:
-        vectorized_text = tfidf_vectorizer.transform([cleaned_text])
-        ml_prob = ml_model.predict_proba(vectorized_text)[0][1]
-        ml_pred = "REAL" if ml_prob > 0.5 else "FAKE"
-    
-    # AI Prediction
-    ai_pred = "Unknown"
-    ai_prob = 0.0
-    if 'ai_model' in globals() and ai_model:
-        inputs = ai_tokenizer(combined_text, return_tensors="pt", truncation=True, padding=True)
+
+class ModelPrediction(BaseModel):
+    label: Literal["REAL", "FAKE", "UNAVAILABLE"]
+    # Probability of the predicted label; None when the model is unavailable.
+    confidence: Optional[float]
+
+
+class PredictionResponse(BaseModel):
+    ml: ModelPrediction
+    ai: ModelPrediction
+
+
+UNAVAILABLE = ModelPrediction(label="UNAVAILABLE", confidence=None)
+
+
+def to_prediction(prob_real):
+    if prob_real > 0.5:
+        return ModelPrediction(label="REAL", confidence=prob_real)
+    return ModelPrediction(label="FAKE", confidence=1 - prob_real)
+
+
+@app.get("/health")
+def health():
+    return {"ml_model_loaded": ml_model is not None, "ai_model_loaded": ai_model is not None}
+
+
+# A plain `def` so FastAPI runs the CPU-bound inference in a worker thread
+# instead of blocking the event loop.
+@app.post("/predict", response_model=PredictionResponse)
+def predict(news: NewsInput):
+    combined_text = combine_title_text(news.title, news.text)
+
+    ml_result = UNAVAILABLE
+    if ml_model is not None:
+        classes = list(ml_model.classes_)
+        prob_real = float(ml_model.predict_proba([clean_text(combined_text)])[0][classes.index(LABEL_REAL)])
+        ml_result = to_prediction(prob_real)
+
+    ai_result = UNAVAILABLE
+    if ai_model is not None:
+        inputs = ai_tokenizer(combined_text, return_tensors="pt", truncation=True, max_length=512)
         with torch.no_grad():
-            outputs = ai_model(**inputs)
-            scores = torch.nn.functional.softmax(outputs.logits, dim=1)
-            ai_prob = scores[0][1].item()
-            ai_pred = "REAL" if ai_prob > 0.5 else "FAKE"
-            
-    return {
-        "ml": {"label": ml_pred, "confidence": ml_prob if ml_pred == "REAL" else 1 - ml_prob},
-        "ai": {"label": ai_pred, "confidence": ai_prob if ai_pred == "REAL" else 1 - ai_prob}
-    }
+            logits = ai_model(**inputs).logits
+        prob_real = torch.softmax(logits, dim=1)[0][LABEL_REAL].item()
+        ai_result = to_prediction(prob_real)
+
+    return PredictionResponse(ml=ml_result, ai=ai_result)
+
+
+# Serve the frontend from the same origin, so http://localhost:8000/ works without CORS.
+# Mounted last so it doesn't shadow the API routes.
+app.mount("/", StaticFiles(directory=ROOT / "app", html=True), name="app")
+
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8000")))

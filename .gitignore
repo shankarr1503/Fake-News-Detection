@@ -1,9 +1,13 @@
 data/news.csv
+data/news.csv.part
 data/processed_news.csv
+models/*.joblib
 models/*.pkl
 models/ai_model/
 results/
 logs/
 __pycache__/
+.pytest_cache/
 .ipynb_checkpoints/
 *.pyc
+.venv/

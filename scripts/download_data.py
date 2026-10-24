@@ -1,15 +1,24 @@
+import sys
 import urllib.request
-import os
 
-url = "https://raw.githubusercontent.com/lutzhamel/fake-news/master/data/fake_or_real_news.csv"
-output_path = "data/news.csv"
+from common.paths import DATA_DIR, RAW_DATA
 
-if not os.path.exists("data"):
-    os.makedirs("data")
+URL = "https://raw.githubusercontent.com/lutzhamel/fake-news/master/data/fake_or_real_news.csv"
 
-print(f"Downloading {url} to {output_path}...")
-try:
-    urllib.request.urlretrieve(url, output_path)
+
+def main():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    # Download to a temp file and rename, so a failed download never leaves a partial news.csv.
+    tmp_path = RAW_DATA.with_suffix(".csv.part")
+    print(f"Downloading {URL} to {RAW_DATA}...")
+    try:
+        urllib.request.urlretrieve(URL, tmp_path)
+        tmp_path.replace(RAW_DATA)
+    except Exception as e:
+        tmp_path.unlink(missing_ok=True)
+        sys.exit(f"Error downloading file: {e}")
     print("Download complete!")
-except Exception as e:
-    print(f"Error downloading file: {e}")
+
+
+if __name__ == "__main__":
+    main()

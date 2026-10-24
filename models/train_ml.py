@@ -1,51 +1,44 @@
-import pandas as pd
-from sklearn.model_selection import train_test_split
+import sys
+
+import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-import pickle
-import os
+from sklearn.pipeline import Pipeline
+
+from common.data import load_splits
+from common.paths import ML_MODEL, MODELS_DIR
+
 
 def train_ml_model():
     print("Loading processed data...")
-    if not os.path.exists("data/processed_news.csv"):
-        print("Processed data not found. Please run preprocess.py first.")
-        return
-        
-    df = pd.read_csv("data/processed_news.csv")
-    df = df.dropna(subset=['cleaned_content', 'label_num'])
-    
-    X = df['cleaned_content']
-    y = df['label_num']
-    
-    print("Splitting data into train and test sets...")
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
-    print("Vectorizing text using TF-IDF...")
-    tfidf_vectorizer = TfidfVectorizer(max_features=5000)
-    X_train_tfidf = tfidf_vectorizer.fit_transform(X_train)
-    X_test_tfidf = tfidf_vectorizer.transform(X_test)
-    
-    print("Training Logistic Regression model...")
-    model = LogisticRegression(max_iter=1000)
-    model.fit(X_train_tfidf, y_train)
-    
+    try:
+        train_df, test_df = load_splits()
+    except FileNotFoundError as e:
+        sys.exit(str(e))
+
+    # Vectorizer and classifier are saved together so they can never get out of sync.
+    pipeline = Pipeline([
+        ("tfidf", TfidfVectorizer(max_features=5000)),
+        ("clf", LogisticRegression(max_iter=1000)),
+    ])
+
+    print("Training TF-IDF + Logistic Regression model...")
+    pipeline.fit(train_df["cleaned_content"], train_df["label_num"])
+
     print("Evaluating model...")
-    y_pred = model.predict(X_test_tfidf)
-    print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}")
+    y_pred = pipeline.predict(test_df["cleaned_content"])
+    print(f"Accuracy: {accuracy_score(test_df['label_num'], y_pred):.4f}")
     print("\nClassification Report:")
-    print(classification_report(y_test, y_pred))
-    
-    print("Saving model and vectorizer...")
-    if not os.path.exists("models"):
-        os.makedirs("models")
-        
-    with open("models/ml_model.pkl", "wb") as f:
-        pickle.dump(model, f)
-    with open("models/tfidf_vectorizer.pkl", "wb") as f:
-        pickle.dump(tfidf_vectorizer, f)
-    
+    print(classification_report(test_df["label_num"], y_pred, target_names=["FAKE", "REAL"]))
+    print("Confusion Matrix (rows = true FAKE/REAL):")
+    print(confusion_matrix(test_df["label_num"], y_pred))
+
+    print("Saving model...")
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(pipeline, ML_MODEL)
     print("Done!")
+
 
 if __name__ == "__main__":
     train_ml_model()

@@ -114,7 +114,13 @@
             margin-top: 1rem;
         }
 
-        button:hover {
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        button:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 20px 25px -5px rgba(99, 102, 241, 0.5);
         }
@@ -163,6 +169,13 @@
             transition: width 1s ease-out;
         }
 
+        .disclaimer {
+            margin-top: 1.5rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
         .loading {
             display: none;
             text-align: center;
@@ -198,7 +211,7 @@
     <div class="container">
         <header>
             <h1>TruthGuard AI</h1>
-            <p class="subtitle">Premium Fake News Detection Platform</p>
+            <p class="subtitle">Fake News Detection with ML &amp; AI Models</p>
         </header>
 
         <main class="glass-panel">
@@ -236,13 +249,26 @@
                     </div>
                 </div>
             </div>
+
+            <p class="disclaimer">
+                Predictions come from models trained on a small 2016 political news dataset.
+                They reflect writing style learned from that data, not fact-checking. Treat them as a hint, not a verdict.
+            </p>
         </main>
     </div>
 
     <script>
-        document.getElementById('check-btn').addEventListener('click', async () => {
-            const title = document.getElementById('title').value;
-            const text = document.getElementById('content').value;
+        // Same origin when served by the API (http://localhost:8000/); fall back to the
+        // local API when the page is opened directly from disk.
+        const API_URL = location.protocol === 'file:' ? 'http://localhost:8000/predict' : '/predict';
+
+        const checkBtn = document.getElementById('check-btn');
+        const loader = document.getElementById('loader');
+        const resultsPanel = document.getElementById('results-panel');
+
+        checkBtn.addEventListener('click', async () => {
+            const title = document.getElementById('title').value.trim();
+            const text = document.getElementById('content').value.trim();
 
             if (!title || !text) {
                 alert('Please provide both title and content.');
@@ -250,29 +276,44 @@
             }
 
             // UI Reset
-            document.getElementById('results-panel').style.display = 'none';
-            document.getElementById('loader').style.display = 'block';
+            resultsPanel.style.display = 'none';
+            loader.style.display = 'block';
+            checkBtn.disabled = true;
 
             try {
-                const response = await fetch('http://localhost:8000/predict', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, text })
-                });
+                let response;
+                try {
+                    response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ title, text })
+                    });
+                } catch (error) {
+                    throw new Error('Could not reach the API. Make sure the backend is running.');
+                }
 
-                const data = await response.json();
+                const data = await response.json().catch(() => null);
+                if (!response.ok) {
+                    throw new Error(`The API returned an error (${response.status}): ${formatDetail(data)}`);
+                }
 
                 // Update UI
                 updateResult('ml', data.ml);
                 updateResult('ai', data.ai);
-
-                document.getElementById('loader').style.display = 'none';
-                document.getElementById('results-panel').style.display = 'grid';
+                resultsPanel.style.display = 'grid';
             } catch (error) {
-                alert('Error connecting to API. Make sure the backend is running.');
-                document.getElementById('loader').style.display = 'none';
+                alert(error.message);
+            } finally {
+                loader.style.display = 'none';
+                checkBtn.disabled = false;
             }
         });
+
+        function formatDetail(data) {
+            if (!data || !data.detail) return 'Unknown error';
+            if (typeof data.detail === 'string') return data.detail;
+            return data.detail.map(d => `${d.loc.slice(-1)[0]}: ${d.msg}`).join('; ');
+        }
 
         function updateResult(prefix, data) {
             const labelEl = document.getElementById(`${prefix}-label`);
@@ -280,12 +321,21 @@
             const barEl = document.getElementById(`${prefix}-bar`);
 
             labelEl.textContent = data.label;
-            labelEl.style.color = data.label === 'REAL' ? 'var(--real)' : 'var(--fake)';
-            
+
+            if (data.confidence === null) {
+                labelEl.style.color = 'var(--text-muted)';
+                confEl.textContent = 'Model not loaded';
+                barEl.style.width = '0%';
+                return;
+            }
+
+            const color = data.label === 'REAL' ? 'var(--real)' : 'var(--fake)';
+            labelEl.style.color = color;
+
             const confPercent = (data.confidence * 100).toFixed(1);
             confEl.textContent = `Confidence: ${confPercent}%`;
             barEl.style.width = `${confPercent}%`;
-            barEl.style.backgroundColor = data.label === 'REAL' ? 'var(--real)' : 'var(--fake)';
+            barEl.style.backgroundColor = color;
         }
     </script>
 </body>
