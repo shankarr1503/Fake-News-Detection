@@ -16,19 +16,22 @@ const statusEl = document.getElementById('status');
 const errorBanner = document.getElementById('error-banner');
 const resultsPanel = document.getElementById('results-panel');
 const summaryEl = document.getElementById('summary');
+const scene = document.getElementById('scene');
+const stampText = document.getElementById('stamp-text');
+const methodNumber = document.getElementById('method-number');
 
 const fields = [
     {
         input: titleInput,
         name: 'title',
-        label: 'title',
+        label: 'headline',
         countEl: document.getElementById('title-count'),
         errorEl: document.getElementById('title-error'),
     },
     {
         input: contentInput,
         name: 'text',
-        label: 'article content',
+        label: 'article text',
         countEl: document.getElementById('content-count'),
         errorEl: document.getElementById('content-error'),
     },
@@ -56,6 +59,8 @@ for (const field of fields) {
     });
     updateCount(field);
 }
+
+setUpTilt();
 
 async function analyze() {
     if (inFlight) return;
@@ -137,12 +142,21 @@ function setLoading(loading) {
     checkBtn.setAttribute('aria-busy', String(loading));
     loader.hidden = !loading;
     // Only set here; the result or error that follows replaces the message.
-    if (loading) statusEl.textContent = 'Analyzing the article…';
+    if (loading) {
+        statusEl.textContent = 'Analyzing the article…';
+        setScene('analyzing');
+    }
+}
+
+function setScene(state, label = '') {
+    scene.dataset.state = state;
+    stampText.textContent = label;
 }
 
 function showError(message) {
     // The banner is role="alert", so it announces itself.
     statusEl.textContent = '';
+    setScene('idle');
     errorBanner.textContent = message;
     errorBanner.hidden = false;
 }
@@ -188,12 +202,23 @@ function showResults(data) {
         document.getElementById(`${prefix}-bar`).style.width = '0%';
     }
     resultsPanel.hidden = false;
+    methodNumber.textContent = '03';
     void resultsPanel.offsetWidth;
 
     updateResult('ml', data.ml);
     updateResult('ai', data.ai);
+    setScene(...stampFor(data.ml, data.ai));
     summaryEl.textContent = summarize(data.ml, data.ai);
     statusEl.textContent = `Results ready. ${summaryEl.textContent}`;
+}
+
+// What the 3D stack's stamp shows: [scene state, stamp text].
+function stampFor(ml, ai) {
+    const available = [ml, ai].filter((r) => r.confidence !== null);
+    if (available.length === 0) return ['none', 'No model'];
+    if (available.some((r) => r.label !== available[0].label)) return ['mixed', 'Split'];
+    if (available.every((r) => r.confidence < LOW_CONFIDENCE)) return ['mixed', 'Unsure'];
+    return available[0].label === 'REAL' ? ['real', 'Real'] : ['fake', 'Fake'];
 }
 
 function summarize(ml, ai) {
@@ -216,25 +241,47 @@ function updateResult(prefix, data) {
     const meterEl = document.getElementById(`${prefix}-meter`);
     const barEl = document.getElementById(`${prefix}-bar`);
     const lowEl = document.getElementById(`${prefix}-low`);
+    const captionEl = document.getElementById(`${prefix}-caption`);
 
     const kind = data.label === 'REAL' ? 'real' : data.label === 'FAKE' ? 'fake' : 'unavailable';
     labelEl.textContent = kind === 'unavailable' ? 'Unavailable' : data.label;
-    labelEl.className = `prediction ${kind}`;
-    barEl.className = `confidence-bar ${kind}`;
+    labelEl.className = `model-verdict ${kind}`;
+    barEl.className = `meter-fill ${kind}`;
 
     if (data.confidence === null || kind === 'unavailable') {
         confEl.textContent = 'Model not loaded on the server';
         barEl.style.width = '0%';
         meterEl.setAttribute('aria-valuenow', '0');
         meterEl.hidden = true;
+        captionEl.hidden = true;
         lowEl.hidden = true;
         return;
     }
 
     const percent = Math.round(data.confidence * 1000) / 10;
-    confEl.textContent = `Confidence: ${percent.toFixed(1)}%`;
+    confEl.textContent = `${percent.toFixed(1)}%`;
     meterEl.hidden = false;
+    captionEl.hidden = false;
     meterEl.setAttribute('aria-valuenow', String(percent));
     barEl.style.width = `${percent}%`;
     lowEl.hidden = data.confidence >= LOW_CONFIDENCE;
+}
+
+// Tilt the 3D stack towards the pointer. Skipped for touch screens and reduced motion.
+function setUpTilt() {
+    const canTilt =
+        window.matchMedia('(pointer: fine)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!canTilt) return;
+
+    let frame = 0;
+    window.addEventListener('pointermove', (event) => {
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+            frame = 0;
+            const x = event.clientX / window.innerWidth - 0.5;
+            const y = event.clientY / window.innerHeight - 0.5;
+            scene.style.setProperty('--rx', `${(-y * 14).toFixed(2)}deg`);
+            scene.style.setProperty('--rz', `${(x * 18).toFixed(2)}deg`);
+        });
+    });
 }

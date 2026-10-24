@@ -141,7 +141,8 @@ python -m scripts.smoke_test_api     # against a running server
 
 Browser tests in `tests/e2e/` use [Playwright](https://playwright.dev/) and Node.js 18+. They start the API
 themselves (on port 8765, with no models) and mock `/predict` where they need specific results or errors. They
-cover keyboard submission, validation, every error state, timeouts, the result states, phone-width layouts and an
+cover keyboard submission, validation, every error state, timeouts, the result states, the 3D scene's states,
+phone-width layouts and an
 [axe](https://github.com/dequelabs/axe-core) accessibility audit, and fail on any console error, including
 Content-Security-Policy violations.
 

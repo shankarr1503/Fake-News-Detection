@@ -4,8 +4,8 @@ const { test, expect } = require('@playwright/test');
 const prediction = (label, confidence) => ({ label, confidence });
 
 async function fillForm(page) {
-  await page.getByLabel('News Title').fill('Senate passes budget');
-  await page.getByLabel('Article Content').fill('The Senate voted on Tuesday to pass the budget bill.');
+  await page.getByLabel('Headline').fill('Senate passes budget');
+  await page.getByLabel('Article text').fill('The Senate voted on Tuesday to pass the budget bill.');
 }
 
 async function mockPredict(page, status, body, contentType = 'application/json') {
@@ -40,7 +40,7 @@ test.afterEach(() => {
 test('real API without models reports both models unavailable', async ({ page }) => {
   await page.goto('/');
   await fillForm(page);
-  await page.getByRole('button', { name: 'Analyze Authenticity' }).click();
+  await page.getByRole('button', { name: 'Analyze article' }).click();
 
   await expect(page.locator('#summary')).toHaveText(/No models are loaded/);
   await expect(page.locator('#ml-label')).toHaveText('Unavailable');
@@ -57,11 +57,11 @@ test.describe('submitting', () => {
     await page.goto('/');
     await fillForm(page);
 
-    await page.getByLabel('News Title').press('Enter');
+    await page.getByLabel('Headline').press('Enter');
     await expect(page.locator('#results-panel')).toBeVisible();
     expect(calls).toBe(1);
 
-    await page.getByLabel('Article Content').press('Control+Enter');
+    await page.getByLabel('Article text').press('Control+Enter');
     await expect.poll(() => calls).toBe(2);
   });
 
@@ -76,13 +76,13 @@ test.describe('submitting', () => {
     await page.goto('/');
     await fillForm(page);
 
-    const button = page.getByRole('button', { name: 'Analyze Authenticity' });
+    const button = page.getByRole('button', { name: 'Analyze article' });
     await button.click();
     await expect(button).toBeDisabled();
     await expect(button).toHaveAttribute('aria-busy', 'true');
     await expect(page.locator('#loader')).toBeVisible();
     await expect(page.getByRole('status')).toHaveText(/Analyzing/);
-    await page.getByLabel('News Title').press('Enter');
+    await page.getByLabel('Headline').press('Enter');
 
     release();
     await expect(page.locator('#results-panel')).toBeVisible();
@@ -101,15 +101,15 @@ test.describe('validation', () => {
       route.abort();
     });
     await page.goto('/');
-    await page.getByLabel('Article Content').fill('Body only');
-    await page.getByLabel('News Title').fill('   ');
-    await page.getByRole('button', { name: 'Analyze Authenticity' }).click();
+    await page.getByLabel('Article text').fill('Body only');
+    await page.getByLabel('Headline').fill('   ');
+    await page.getByRole('button', { name: 'Analyze article' }).click();
 
-    const title = page.getByLabel('News Title');
-    await expect(page.locator('#title-error')).toHaveText('Please enter the title.');
+    const title = page.getByLabel('Headline');
+    await expect(page.locator('#title-error')).toHaveText('Please enter the headline.');
     await expect(title).toHaveAttribute('aria-invalid', 'true');
     await expect(title).toBeFocused();
-    await expect(title).toHaveCSS('border-top-color', 'rgb(239, 68, 68)');
+    await expect(title).toHaveCSS('border-bottom-color', 'rgb(209, 32, 26)');
     expect(calls).toBe(0);
 
     await title.fill('A title');
@@ -119,10 +119,10 @@ test.describe('validation', () => {
 
   test('inputs are limited to what the API accepts, with a character counter', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByLabel('News Title')).toHaveAttribute('maxlength', '1000');
-    await expect(page.getByLabel('Article Content')).toHaveAttribute('maxlength', '100000');
+    await expect(page.getByLabel('Headline')).toHaveAttribute('maxlength', '1000');
+    await expect(page.getByLabel('Article text')).toHaveAttribute('maxlength', '100000');
 
-    await page.getByLabel('News Title').fill('x'.repeat(950));
+    await page.getByLabel('Headline').fill('x'.repeat(950));
     await expect(page.locator('#title-count')).toHaveText('950 / 1,000');
     await expect(page.locator('#title-count')).toHaveClass(/near-limit/);
   });
@@ -149,10 +149,10 @@ test.describe('errors are shown inline', () => {
       await mockPredict(page, status, body, contentType);
       await page.goto('/');
       await fillForm(page);
-      await page.getByRole('button', { name: 'Analyze Authenticity' }).click();
+      await page.getByRole('button', { name: 'Analyze article' }).click();
 
       await expect(page.getByRole('alert')).toHaveText(message);
-      await expect(page.getByRole('button', { name: 'Analyze Authenticity' })).toBeEnabled();
+      await expect(page.getByRole('button', { name: 'Analyze article' })).toBeEnabled();
       await expect(page.locator('#results-panel')).toBeHidden();
     });
   }
@@ -161,7 +161,7 @@ test.describe('errors are shown inline', () => {
     await page.route('**/predict', (route) => route.abort('failed'));
     await page.goto('/');
     await fillForm(page);
-    await page.getByRole('button', { name: 'Analyze Authenticity' }).click();
+    await page.getByRole('button', { name: 'Analyze article' }).click();
     await expect(page.getByRole('alert')).toHaveText(/Could not reach the API/);
   });
 
@@ -170,12 +170,12 @@ test.describe('errors are shown inline', () => {
     await page.route('**/predict', () => {});
     await page.goto('/');
     await fillForm(page);
-    await page.getByRole('button', { name: 'Analyze Authenticity' }).click();
+    await page.getByRole('button', { name: 'Analyze article' }).click();
     await expect(page.locator('#loader')).toBeVisible();
 
     await page.clock.runFor(61_000);
     await expect(page.getByRole('alert')).toHaveText(/timed out/);
-    await expect(page.getByRole('button', { name: 'Analyze Authenticity' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Analyze article' })).toBeEnabled();
     await expect(page.locator('#loader')).toBeHidden();
   });
 
@@ -183,12 +183,12 @@ test.describe('errors are shown inline', () => {
     await mockPredict(page, 500, 'boom', 'text/plain');
     await page.goto('/');
     await fillForm(page);
-    await page.getByRole('button', { name: 'Analyze Authenticity' }).click();
+    await page.getByRole('button', { name: 'Analyze article' }).click();
     await expect(page.getByRole('alert')).toBeVisible();
 
     await page.unrouteAll();
     await mockPredict(page, 200, { ml: prediction('FAKE', 0.9), ai: prediction('FAKE', 0.95) });
-    await page.getByRole('button', { name: 'Analyze Authenticity' }).click();
+    await page.getByRole('button', { name: 'Analyze article' }).click();
     await expect(page.locator('#summary')).toHaveText('Both models predict FAKE.');
     await expect(page.locator('#error-banner')).toBeHidden();
   });
@@ -199,13 +199,13 @@ test.describe('results', () => {
     await mockPredict(page, 200, { ml: prediction('REAL', 0.69), ai: prediction('FAKE', 0.55) });
     await page.goto('/');
     await fillForm(page);
-    await page.getByRole('button', { name: 'Analyze Authenticity' }).click();
+    await page.getByRole('button', { name: 'Analyze article' }).click();
 
     await expect(page.locator('#summary')).toHaveText(/models disagree/);
     await expect(page.locator('#ml-label')).toHaveText('REAL');
     await expect(page.locator('#ml-label')).toHaveClass(/real/);
     await expect(page.locator('#ai-label')).toHaveClass(/fake/);
-    await expect(page.locator('#ml-conf')).toHaveText('Confidence: 69.0%');
+    await expect(page.locator('#ml-conf')).toHaveText('69.0%');
     await expect(page.locator('#ml-meter')).toHaveAttribute('aria-valuenow', '69');
     await expect(page.locator('#ml-low')).toBeHidden();
     await expect(page.locator('#ai-low')).toBeVisible();
@@ -224,7 +224,7 @@ test.describe('results', () => {
     await mockPredict(page, 200, { ml: prediction('REAL', 0.9), ai: prediction('UNAVAILABLE', null) });
     await page.goto('/');
     await fillForm(page);
-    await page.getByRole('button', { name: 'Analyze Authenticity' }).click();
+    await page.getByRole('button', { name: 'Analyze article' }).click();
 
     await expect(page.locator('#summary')).toHaveText('Only one model is available. It predicts REAL.');
     await expect(page.locator('#ai-label')).toHaveText('Unavailable');
@@ -237,7 +237,7 @@ test.describe('results', () => {
     await mockPredict(page, 200, { ml: prediction('REAL', 0.9), ai: prediction('REAL', 0.9) });
     await page.goto('/');
     await fillForm(page);
-    const button = page.getByRole('button', { name: 'Analyze Authenticity' });
+    const button = page.getByRole('button', { name: 'Analyze article' });
     await button.click();
     await expect(page.locator('#results-panel')).toBeVisible();
     await page.waitForTimeout(1200);
@@ -255,19 +255,87 @@ test.describe('results', () => {
   });
 });
 
+test.describe('3D newspaper stack', () => {
+  const stampCases = [
+    ['both REAL', { ml: prediction('REAL', 0.9), ai: prediction('REAL', 0.8) }, 'real', 'Real'],
+    ['both FAKE', { ml: prediction('FAKE', 0.9), ai: prediction('FAKE', 0.7) }, 'fake', 'Fake'],
+    ['models disagree', { ml: prediction('REAL', 0.9), ai: prediction('FAKE', 0.8) }, 'mixed', 'Split'],
+    ['agree but both unsure', { ml: prediction('REAL', 0.55), ai: prediction('REAL', 0.52) }, 'mixed', 'Unsure'],
+    ['one model only', { ml: prediction('FAKE', 0.9), ai: prediction('UNAVAILABLE', null) }, 'fake', 'Fake'],
+    ['no models', { ml: prediction('UNAVAILABLE', null), ai: prediction('UNAVAILABLE', null) }, 'none', 'No model'],
+  ];
+
+  for (const [name, body, state, stamp] of stampCases) {
+    test(`stamps the stack: ${name}`, async ({ page }) => {
+      await mockPredict(page, 200, body);
+      await page.goto('/');
+      await fillForm(page);
+      await page.getByRole('button', { name: 'Analyze article' }).click();
+
+      await expect(page.locator('#scene')).toHaveAttribute('data-state', state);
+      await expect(page.locator('#stamp-text')).toHaveText(stamp);
+      await expect(page.locator('#method-number')).toHaveText('03');
+    });
+  }
+
+  test('fans out while analyzing and resets after an error', async ({ page }) => {
+    let release;
+    await page.route('**/predict', async (route) => {
+      await new Promise((resolve) => (release = resolve));
+      await route.fulfill({ status: 500, body: 'boom' });
+    });
+    await page.goto('/');
+    await expect(page.locator('#scene')).toHaveAttribute('data-state', 'idle');
+    await fillForm(page);
+    await page.getByRole('button', { name: 'Analyze article' }).click();
+
+    await expect(page.locator('#scene')).toHaveAttribute('data-state', 'analyzing');
+    release();
+    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(page.locator('#scene')).toHaveAttribute('data-state', 'idle');
+    await expect(page.locator('#stamp-text')).toBeEmpty();
+  });
+
+  test('tilts towards the pointer', async ({ page }) => {
+    await page.goto('/');
+    await page.mouse.move(10, 10);
+    await expect.poll(() => page.locator('#scene').evaluate((el) => el.style.getPropertyValue('--rz'))).toMatch(/^-/);
+    await page.mouse.move(1200, 700);
+    await expect.poll(() => page.locator('#scene').evaluate((el) => el.style.getPropertyValue('--rz'))).toMatch(/^\d/);
+  });
+
+  test('is hidden from assistive technology', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('#scene')).toHaveAttribute('aria-hidden', 'true');
+  });
+});
+
 test.describe('mobile layout', () => {
   for (const width of [320, 375, 414]) {
+    test(`no horizontal scrolling while analyzing at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.route('**/predict', () => {});
+      await page.goto('/');
+      await fillForm(page);
+      await page.getByRole('button', { name: 'Analyze article' }).click();
+      await expect(page.locator('#scene')).toHaveAttribute('data-state', 'analyzing');
+      await page.waitForTimeout(900);
+
+      const [scrollWidth, innerWidth] = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
+      expect(scrollWidth).toBeLessThanOrEqual(innerWidth);
+    });
+
     test(`no horizontal scrolling at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await mockPredict(page, 200, { ml: prediction('REAL', 0.69), ai: prediction('REAL', 0.5) });
       await page.goto('/');
       await fillForm(page);
-      await page.getByRole('button', { name: 'Analyze Authenticity' }).click();
+      await page.getByRole('button', { name: 'Analyze article' }).click();
       await expect(page.locator('#results-panel')).toBeVisible();
 
       const layout = await page.evaluate(() => {
-        const panel = document.querySelector('.glass-panel').getBoundingClientRect();
-        const cards = [...document.querySelectorAll('.result-card')].map((c) => c.getBoundingClientRect());
+        const panel = document.querySelector('#results-panel .section-body').getBoundingClientRect();
+        const cards = [...document.querySelectorAll('.model')].map((c) => c.getBoundingClientRect());
         return {
           scrollWidth: document.documentElement.scrollWidth,
           innerWidth: window.innerWidth,
@@ -300,7 +368,7 @@ test.describe('accessibility', () => {
 
   test('with validation errors', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('button', { name: 'Analyze Authenticity' }).click();
+    await page.getByRole('button', { name: 'Analyze article' }).click();
     await expectNoViolations(page);
   });
 
@@ -308,7 +376,7 @@ test.describe('accessibility', () => {
     await mockPredict(page, 200, { ml: prediction('REAL', 0.69), ai: prediction('UNAVAILABLE', null) });
     await page.goto('/');
     await fillForm(page);
-    await page.getByRole('button', { name: 'Analyze Authenticity' }).click();
+    await page.getByRole('button', { name: 'Analyze article' }).click();
     await expect(page.locator('#results-panel')).toBeVisible();
     await expectNoViolations(page);
   });
