@@ -1,0 +1,12 @@
+{
+  "name": "fake-news-detection-frontend-tests",
+  "private": true,
+  "description": "Browser tests for the frontend in app/",
+  "scripts": {
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "axe-core": "4.10.2"
+  }
+}

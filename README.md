@@ -132,29 +132,43 @@ orchestrator readiness probes.
 ## Development
 
 ```bash
-python -m pytest                     # unit tests; no trained models needed
+python -m pytest                     # backend unit tests; no trained models needed
 ruff check . && ruff format --check .
 python -m scripts.smoke_test_api     # against a running server
 ```
 
-CI (`.github/workflows/ci.yml`) runs lint and tests, and builds and starts the Docker image, on every pull request
-and push to `master`. Dependabot proposes monthly dependency updates. Retrain the models after upgrading
+### Frontend tests
+
+Browser tests in `tests/e2e/` use [Playwright](https://playwright.dev/) and Node.js 18+. They start the API
+themselves (on port 8765, with no models) and mock `/predict` where they need specific results or errors. They
+cover keyboard submission, validation, every error state, timeouts, the result states, phone-width layouts and an
+[axe](https://github.com/dequelabs/axe-core) accessibility audit, and fail on any console error, including
+Content-Security-Policy violations.
+
+```bash
+npm ci
+npx playwright install chromium      # first time only
+npx playwright test
+```
+
+CI (`.github/workflows/ci.yml`) runs lint, the backend and browser tests, and builds and starts the Docker image, on
+every pull request and push to `master`. Dependabot proposes monthly dependency updates. Retrain the models after upgrading
 scikit-learn or transformers.
 
 ## Project layout
 
 ```
 api/                 FastAPI app: main.py (routes), config.py (settings), middleware.py
-app/                 Frontend (index.html, app.js)
+app/                 Frontend (index.html, style.css, app.js, favicon.svg); plain HTML/CSS/JS, no build step
 common/              Paths, labels, text cleaning, data split and model metadata, shared by training and serving
 models/train_*.py    Training scripts (trained models are written next to them, git-ignored)
 scripts/             Download, preprocessing and API smoke test
-tests/               pytest suite
+tests/               pytest suite; tests/e2e/ holds the Playwright browser tests
 ```
 
 ## Security notes
 
 - Model files are loaded with `joblib`/`pickle`, which can run code. Only load models you trained yourself.
-- The frontend is served with a strict Content-Security-Policy and `X-Frame-Options`, `X-Content-Type-Options`
+- The frontend is served with a strict Content-Security-Policy (no inline scripts or styles) and `X-Frame-Options`, `X-Content-Type-Options`
   and `Referrer-Policy` headers. `/docs` and `/redoc` are exempt from the CSP because they load scripts from a CDN.
   Set `DOCS_ENABLED=false` if you don't want them public.

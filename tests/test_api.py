@@ -128,7 +128,9 @@ def test_frontend_is_served_with_security_headers(client):
     assert "<title>" in response.text
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
-    assert "script-src 'self'" in response.headers["content-security-policy"]
+    csp = response.headers["content-security-policy"]
+    assert "script-src 'self';" in csp
+    assert "unsafe-inline" not in csp
 
 
 def test_docs_are_exempt_from_csp_and_can_be_disabled(client):

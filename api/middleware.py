@@ -2,12 +2,12 @@
 
 from starlette.responses import JSONResponse
 
-# The frontend loads its script from this server and its font from Google Fonts.
+# The frontend loads its script and stylesheet from this server and its font from Google Fonts.
 CONTENT_SECURITY_POLICY = "; ".join(
     [
         "default-src 'self'",
         "script-src 'self'",
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "style-src 'self' https://fonts.googleapis.com",
         "font-src https://fonts.gstatic.com",
         "img-src 'self' data:",
         "connect-src 'self'",
