@@ -2,7 +2,7 @@ import sys
 
 import pandas as pd
 
-from common.data import LABEL_FAKE, LABEL_REAL
+from common.labels import LABEL_FAKE, LABEL_REAL
 from common.paths import PROCESSED_DATA, RAW_DATA
 from common.text import clean_text, combine_title_text
 
@@ -19,7 +19,7 @@ def main():
     if missing:
         sys.exit(f"Dataset is missing required columns: {sorted(missing)}")
 
-    df["total_content"] = [combine_title_text(t, x) for t, x in zip(df["title"], df["text"])]
+    df["total_content"] = [combine_title_text(t, x) for t, x in zip(df["title"], df["text"], strict=True)]
 
     print("Cleaning text...")
     df["cleaned_content"] = df["total_content"].apply(clean_text)

@@ -1,0 +1,4 @@
+# Data preparation and model training.
+-r requirements.txt
+accelerate==1.15.0
+pandas==3.0.5

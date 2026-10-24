@@ -3,6 +3,7 @@ data/news.csv.part
 data/processed_news.csv
 models/*.joblib
 models/*.pkl
+models/*.meta.json
 models/ai_model/
 results/
 logs/

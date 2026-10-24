@@ -14,14 +14,23 @@ A FastAPI backend serves both models and a small web frontend.
 
 ## Setup
 
-Python 3.10+.
+Python 3.11+.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt   # or requirements.txt without the test tools
+pip install -r requirements-dev.txt
 ```
 
-## Usage
+| File                     | Contents                                     |
+| ------------------------ | -------------------------------------------- |
+| `requirements.txt`       | Serving only (what the Docker image installs) |
+| `requirements-train.txt` | + data preparation and training              |
+| `requirements-dev.txt`   | + tests, linting and the API smoke test      |
+
+Without a GPU, install the much smaller CPU build of PyTorch first:
+`pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.1`.
+
+## Training
 
 Run every command from the repository root, using `python -m` so the shared `common` package can be imported.
 
@@ -29,28 +38,66 @@ Run every command from the repository root, using `python -m` so the shared `com
 python -m scripts.download_data   # -> data/news.csv
 python -m scripts.preprocess      # -> data/processed_news.csv
 python -m models.train_ml         # -> models/ml_pipeline.joblib (about a minute)
-python -m models.train_ai         # -> models/ai_model/ (slow on CPU; see --help for options)
-python -m api.main                # serves the API and the frontend on http://127.0.0.1:8000
+python -m models.train_ai         # -> models/ai_model/ (slow on CPU; see --help)
 ```
 
-Then open <http://127.0.0.1:8000/> in a browser. The API starts even if only one model is trained; the other one
-is reported as `UNAVAILABLE`.
+Both models are evaluated on the same stratified test split (`random_state=42`), so their scores are comparable.
+A training run **does not save the model** if test accuracy is below `--min-accuracy` (0.85 for ML, 0.80 for
+AI), so a bad run can't replace a working model. Each model is saved with a metadata file recording when it was
+trained, its test scores and the library versions used; the API logs a warning if those versions differ from
+the installed ones.
 
 `train_ai` options: `--train-samples N` (default 2000; `0` uses the full training split), `--epochs N`
-(default 1) and `--base-model NAME_OR_PATH`. Both models are evaluated on the same stratified test split
-(`random_state=42`), so their scores can be compared.
+(default 1), `--base-model NAME_OR_PATH`, `--min-accuracy X`.
 
-### Configuration (environment variables)
+## Running locally
 
-| Variable       | Default     | Purpose                                                  |
-| -------------- | ----------- | -------------------------------------------------------- |
-| `HOST`         | `127.0.0.1` | Interface to bind. Use `0.0.0.0` to expose it on the network. |
-| `PORT`         | `8000`      | Port to listen on.                                       |
-| `CORS_ORIGINS` | `*`         | Comma-separated origins allowed to call the API.         |
+```bash
+python -m api.main                # http://127.0.0.1:8000
+```
+
+Open <http://127.0.0.1:8000/> for the web page, or <http://127.0.0.1:8000/docs> for the interactive API docs.
+
+## Deploying with Docker
+
+The image contains the API and frontend only. Trained models are mounted from the host at `/models`.
+
+```bash
+# Train the models first (see above), then:
+docker compose up -d --build
+curl http://localhost:8000/ready
+```
+
+The image installs CPU-only PyTorch, runs as a non-root user, has a container `HEALTHCHECK` on `/ready`, and
+`docker-compose.yml` runs it with a read-only filesystem. To use a registry mirror, pass
+`--build-arg BASE_IMAGE=...`.
+
+**In front of the container**, put a reverse proxy or load balancer that terminates TLS and applies rate
+limiting. The app doesn't do either itself. uvicorn is started with `--proxy-headers`, so it trusts
+`X-Forwarded-*` headers from the proxy.
+
+**Sizing:** each worker process loads its own copy of both models (roughly 0.5–1 GB of RAM with DistilBERT and PyTorch) and runs
+one DistilBERT inference at a time. Scale with `UVICORN_WORKERS`, and set `TORCH_THREADS` to about
+`CPU cores / workers` so workers don't compete for the same cores.
+
+## Configuration
+
+All settings are environment variables.
+
+| Variable            | Default            | Purpose                                                                  |
+| ------------------- | ------------------ | ------------------------------------------------------------------------ |
+| `MODELS_DIR`        | `./models`         | Where trained models are loaded from (`/models` in Docker).              |
+| `CORS_ORIGINS`      | *(empty)*          | Comma-separated origins allowed to call the API from another site. Empty = same-origin only, which is all the bundled frontend needs. Use `null` to allow the page opened from disk (`file://`). |
+| `MAX_REQUEST_BYTES` | `1000000`          | Larger request bodies are rejected with `413`.                           |
+| `TORCH_THREADS`     | `0` (all cores)    | PyTorch threads per worker.                                              |
+| `DOCS_ENABLED`      | `true`             | Serve `/docs`, `/redoc` and `/openapi.json`.                             |
+| `UVICORN_WORKERS`   | `1`                | Worker processes (Docker).                                               |
+| `UVICORN_HOST` / `UVICORN_PORT` | `0.0.0.0` / `8000` | Bind address (Docker).                                       |
+| `HOST` / `PORT`     | `127.0.0.1` / `8000` | Bind address for `python -m api.main`.                                 |
 
 ## API
 
-`POST /predict`
+### `POST /predict`
 
 ```json
 { "title": "Headline", "text": "Article body" }
@@ -64,27 +111,50 @@ is reported as `UNAVAILABLE`.
 ```
 
 `label` is `REAL`, `FAKE` or `UNAVAILABLE` (model not loaded). `confidence` is the probability of the predicted
-label. `title` (1–1,000 chars) and `text` (1–100,000 chars) are required; invalid input returns `422`.
+label. `title` (1–1,000 chars) and `text` (1–100,000 chars) are required.
 
-`GET /health` reports which models are loaded.
+| Status | Meaning                                       |
+| ------ | --------------------------------------------- |
+| `422`  | Invalid input (details in the response body)  |
+| `411`  | Request without a `Content-Length` header     |
+| `413`  | Request body larger than `MAX_REQUEST_BYTES`  |
 
-## Tests
+### `GET /health`
+
+Liveness check. Always `200` while the process is running, and reports which models are loaded along with their
+training metadata.
+
+### `GET /ready`
+
+Readiness check. `200` once at least one model is loaded, `503` otherwise. Use it for load-balancer and
+orchestrator readiness probes.
+
+## Development
 
 ```bash
 python -m pytest                     # unit tests; no trained models needed
+ruff check . && ruff format --check .
 python -m scripts.smoke_test_api     # against a running server
 ```
+
+CI (`.github/workflows/ci.yml`) runs lint and tests, and builds and starts the Docker image, on every pull request
+and push to `master`. Dependabot proposes monthly dependency updates. Retrain the models after upgrading
+scikit-learn or transformers.
 
 ## Project layout
 
 ```
-api/main.py          FastAPI app (also serves app/)
-app/index.html       Frontend
-common/              Paths, text cleaning and data split shared by training and serving
+api/                 FastAPI app: main.py (routes), config.py (settings), middleware.py
+app/                 Frontend (index.html, app.js)
+common/              Paths, labels, text cleaning, data split and model metadata, shared by training and serving
 models/train_*.py    Training scripts (trained models are written next to them, git-ignored)
 scripts/             Download, preprocessing and API smoke test
 tests/               pytest suite
 ```
 
-Model files are loaded with `joblib`/`pickle`, which can run code. Only load models you trained yourself.
-Retrain after upgrading scikit-learn or transformers.
+## Security notes
+
+- Model files are loaded with `joblib`/`pickle`, which can run code. Only load models you trained yourself.
+- The frontend is served with a strict Content-Security-Policy and `X-Frame-Options`, `X-Content-Type-Options`
+  and `Referrer-Policy` headers. `/docs` and `/redoc` are exempt from the CSP because they load scripts from a CDN.
+  Set `DOCS_ENABLED=false` if you don't want them public.

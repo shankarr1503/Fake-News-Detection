@@ -1,0 +1,16 @@
+[project]
+name = "fake-news-detection"
+version = "1.0.0"
+description = "Fake news classification with TF-IDF + Logistic Regression and DistilBERT, served by FastAPI."
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "BLE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

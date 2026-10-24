@@ -1,12 +1,10 @@
+# Serving dependencies (what the API / Docker image needs).
 # Versions this project was tested with. Retrain the models after upgrading
 # scikit-learn or transformers: saved models are tied to the library version.
-accelerate==1.15.0
 fastapi==0.162.0
 joblib==1.6.0
 numpy==2.5.3
-pandas==3.0.5
 pydantic==2.13.5
-requests==2.34.2
 scikit-learn==1.9.1
 torch==2.14.1
 transformers==5.20.2

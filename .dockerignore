@@ -1,0 +1,6 @@
+*
+!requirements.txt
+!common/
+!api/
+!app/
+**/__pycache__

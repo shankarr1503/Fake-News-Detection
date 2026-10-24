@@ -1,4 +1,5 @@
 """Manual smoke test against a running API (not collected by pytest)."""
+
 import json
 import sys
 

@@ -14,7 +14,7 @@ def main():
     try:
         urllib.request.urlretrieve(URL, tmp_path)
         tmp_path.replace(RAW_DATA)
-    except Exception as e:
+    except OSError as e:  # includes URLError and HTTPError
         tmp_path.unlink(missing_ok=True)
         sys.exit(f"Error downloading file: {e}")
     print("Download complete!")

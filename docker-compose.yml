@@ -1,0 +1,18 @@
+services:
+  api:
+    build: .
+    image: fake-news-detection:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      # Trained models from `python -m models.train_ml` / `train_ai`, mounted read-only.
+      - ./models:/models:ro
+    environment:
+      UVICORN_WORKERS: "2"
+      TORCH_THREADS: "2"
+      # CORS_ORIGINS: "https://your-frontend.example.com"
+      # DOCS_ENABLED: "false"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
