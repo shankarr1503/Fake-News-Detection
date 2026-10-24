@@ -10,6 +10,10 @@
     --red: #d1201a;
     --gutter: 24px;
     --margin: 40px;
+    /* Set by app.js: pointer position (-0.5..0.5) and how far the hero has scrolled away (0..1). */
+    --px: 0;
+    --py: 0;
+    --scroll: 0;
     color-scheme: light;
 }
 
@@ -103,6 +107,8 @@ h3 {
 /* ---------- Hero ---------- */
 
 .hero {
+    position: relative;
+    isolation: isolate;
     /* The fanned-out pages may bleed past the edge on narrow screens; never let them cause sideways scrolling. */
     overflow-x: clip;
     padding-top: 72px;
@@ -111,9 +117,53 @@ h3 {
     row-gap: 40px;
 }
 
+.hero > :not(.grid-floor) {
+    position: relative;
+    z-index: 1;
+}
+
+/* The 12-column page grid as a 3D floor receding behind the hero. */
+.grid-floor {
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 42%;
+    z-index: 0;
+    opacity: 0.7;
+    overflow: hidden;
+    pointer-events: none;
+    perspective: 640px;
+    perspective-origin: 50% 0%;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 70%);
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 70%);
+}
+
+.grid-floor-plane {
+    position: absolute;
+    left: -50%;
+    right: -50%;
+    top: 0;
+    height: 260%;
+    transform-origin: 50% 0;
+    transform: rotateX(76deg) rotateZ(calc(var(--px) * -8deg));
+    background-image:
+        linear-gradient(to right, var(--rule-light) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--rule-light) 1px, transparent 1px);
+    /* 24 columns across a plane twice the hero's width = the page's 12 columns. */
+    background-size: calc(100% / 24) 100%, 100% 80px;
+    animation: floor-travel 5s linear infinite;
+}
+
+@keyframes floor-travel {
+    from { background-position: 0 0, 0 0; }
+    to   { background-position: 0 0, 0 80px; }
+}
+
 .headline {
     grid-column: 1 / 8;
     grid-row: 1;
+    /* Tips back into the page as the hero scrolls away. */
+    transform-origin: 50% 100%;
+    transform: perspective(900px) rotateX(calc(var(--scroll) * 32deg)) translateY(calc(var(--scroll) * -24px));
     font-size: clamp(4.5rem, 12.5vw, 11.5rem);
     font-weight: 800;
     font-stretch: 78%;
@@ -124,8 +174,26 @@ h3 {
     margin-left: -0.05em;
 }
 
+/* Each line sits at its own depth and drifts with the pointer; the question mark floats closest. */
+.headline-line {
+    display: block;
+    transition: transform 0.3s ease-out;
+}
+
+.headline-line-1 {
+    transform: translate3d(calc(var(--px) * -22px), calc(var(--py) * -12px), 0);
+}
+
+.headline-line-2 {
+    perspective: 500px;
+    transform: translate3d(calc(var(--px) * 12px), calc(var(--py) * 8px), 0);
+}
+
 .headline-mark {
+    display: inline-block;
     color: var(--red);
+    transition: transform 0.3s ease-out;
+    transform: translate3d(calc(var(--px) * 34px), calc(var(--py) * 22px), 60px) rotateY(calc(var(--px) * 50deg));
 }
 
 .intro {
@@ -164,7 +232,9 @@ h3 {
     position: absolute;
     inset: 16% 14%;
     transform-style: preserve-3d;
-    transform: rotateX(calc(57deg + var(--tilt) + var(--rx))) rotateZ(calc(-36deg + var(--rz)));
+    transform:
+        rotateX(calc(57deg + var(--tilt) + var(--rx) - var(--scroll) * 18deg))
+        rotateZ(calc(-36deg + var(--rz) + var(--scroll) * 40deg));
     transition: transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
     animation: drift 7s ease-in-out infinite alternate;
 }
@@ -334,6 +404,8 @@ h3 {
 /* ---------- Sections ---------- */
 
 .section {
+    /* Flipping cards and the 3D towers must never cause sideways scrolling. */
+    overflow-x: clip;
     padding-top: 28px;
     padding-bottom: 96px;
     border-top: 2px solid var(--ink);
@@ -516,6 +588,7 @@ button:disabled {
     display: flex;
     align-items: center;
     gap: 16px;
+    perspective: 300px;
     margin-top: 32px;
     font-size: 0.8125rem;
     font-weight: 600;
@@ -523,25 +596,35 @@ button:disabled {
     letter-spacing: 0.08em;
 }
 
-.loading-track {
+/* A small tumbling cube while the models run. */
+.cube {
     position: relative;
-    flex: 0 0 160px;
-    height: 2px;
-    background: var(--rule-light);
-    overflow: hidden;
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    margin: 0 6px;
+    transform-style: preserve-3d;
+    animation: tumble 1.8s cubic-bezier(0.6, 0, 0.4, 1) infinite;
 }
 
-.loading-fill {
+.cube-face {
     position: absolute;
-    inset: 0 auto 0 0;
-    width: 40%;
-    background: var(--red);
-    animation: sweep 1.1s ease-in-out infinite;
+    inset: 0;
+    border: 1.5px solid var(--ink);
+    background: var(--paper-light);
 }
 
-@keyframes sweep {
-    from { transform: translateX(-100%); }
-    to   { transform: translateX(250%); }
+.cube-front  { transform: translateZ(10px); }
+.cube-back   { transform: rotateY(180deg) translateZ(10px); }
+.cube-left   { transform: rotateY(-90deg) translateZ(10px); }
+.cube-right  { transform: rotateY(90deg) translateZ(10px); background: var(--ink); }
+.cube-top    { transform: rotateX(90deg) translateZ(10px); background: var(--red); }
+.cube-bottom { transform: rotateX(-90deg) translateZ(10px); }
+
+@keyframes tumble {
+    from { transform: rotateX(-30deg) rotateY(0deg); }
+    50%  { transform: rotateX(150deg) rotateY(180deg); }
+    to   { transform: rotateX(330deg) rotateY(360deg); }
 }
 
 .error-banner {
@@ -568,10 +651,139 @@ button:disabled {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     border-top: 2px solid var(--ink);
+    perspective: 1800px;
 }
 
+/* Cards flip in on each result, then lean towards the pointer (--card-x/--card-y set by app.js). */
 .model {
     padding: 24px var(--gutter) 8px 0;
+    background: var(--paper);
+    transform-origin: 0 50%;
+    transform: rotateX(var(--card-x, 0deg)) rotateY(var(--card-y, 0deg));
+    transition: transform 0.35s ease-out;
+}
+
+.models.is-revealing .model {
+    animation: card-flip 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+
+.models.is-revealing .model + .model {
+    animation-delay: 0.14s;
+}
+
+@keyframes card-flip {
+    from { transform: rotateY(-85deg); opacity: 0; }
+    to   { transform: rotateY(0deg); opacity: 1; }
+}
+
+/* ---------- 3D confidence towers ---------- */
+
+.towers {
+    position: relative;
+    width: 100%;
+    max-width: 260px;
+    aspect-ratio: 1;
+    margin-top: 28px;
+    perspective: 1000px;
+    container-type: inline-size;
+}
+
+.towers-stage {
+    position: absolute;
+    inset: 30% 20% 8%;
+    transform-style: preserve-3d;
+    transform: rotateX(58deg) rotateZ(-42deg);
+}
+
+.towers-floor {
+    position: absolute;
+    inset: -14%;
+    border: 1px solid var(--ink);
+    background-image:
+        linear-gradient(to right, var(--rule-light) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--rule-light) 1px, transparent 1px);
+    background-size: 12.5% 12.5%;
+}
+
+.tower {
+    position: absolute;
+    top: 28%;
+    width: 36%;
+    aspect-ratio: 1;
+    transform-style: preserve-3d;
+    /* --level (0..1) is set by app.js from the model's confidence. */
+    --level: 0;
+    --height: calc(var(--level) * 58cqw + 2px);
+    --top: #d8d4ca;
+    --front: #bdb8ac;
+    --side: #a9a397;
+}
+
+.tower-a { left: 4%; }
+.tower-b { left: 60%; }
+
+.tower.real { --top: #4a4844; --front: var(--ink); --side: #2c2b28; }
+.tower.fake { --top: #ea5149; --front: var(--red); --side: #9c160f; }
+
+.tower-face {
+    position: absolute;
+    display: block;
+    transition:
+        transform 1s cubic-bezier(0.2, 0.7, 0.2, 1),
+        width 1s cubic-bezier(0.2, 0.7, 0.2, 1),
+        height 1s cubic-bezier(0.2, 0.7, 0.2, 1),
+        background-color 0.4s;
+}
+
+.tower-top {
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: var(--top);
+    color: var(--paper-light);
+    font-weight: 800;
+    font-size: 9cqw;
+    transform: translateZ(var(--height));
+}
+
+.tower-top span {
+    transform: rotate(42deg);
+}
+
+.tower-front {
+    left: 0;
+    top: 100%;
+    width: 100%;
+    height: var(--height);
+    background: var(--front);
+    transform-origin: 50% 0;
+    transform: rotateX(90deg);
+}
+
+.tower-side {
+    left: 100%;
+    top: 0;
+    width: var(--height);
+    height: 100%;
+    background: var(--side);
+    transform-origin: 0 50%;
+    transform: rotateY(-90deg);
+}
+
+/* ---------- Scroll reveal (classes added by app.js, so content shows without JavaScript) ---------- */
+
+.reveal {
+    opacity: 0;
+    transform: perspective(1400px) rotateX(18deg) translateY(56px);
+    transform-origin: 50% 0;
+    transition:
+        opacity 0.8s ease-out,
+        transform 1s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.reveal.is-visible {
+    opacity: 1;
+    transform: none;
 }
 
 .model + .model {
@@ -757,6 +969,7 @@ button:disabled {
     .section-label {
         grid-column: 1 / -1;
         flex-direction: row;
+        flex-wrap: wrap;
         align-items: baseline;
         gap: 14px;
         margin-bottom: 28px;
@@ -764,6 +977,18 @@ button:disabled {
 
     .section-label h2 {
         font-size: 1.625rem;
+    }
+
+    /* A full-width row, so the chart always sits on its own line below the heading. */
+    .towers-row {
+        flex: 0 0 100%;
+        display: flex;
+        justify-content: center;
+    }
+
+    .towers {
+        max-width: 220px;
+        margin-top: 4px;
     }
 
     .section-body {
@@ -846,5 +1071,10 @@ button:disabled {
 
     .scene[data-state="analyzing"] .np-scan {
         top: 44%;
+    }
+
+    .reveal {
+        opacity: 1;
+        transform: none;
     }
 }

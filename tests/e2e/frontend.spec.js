@@ -304,6 +304,73 @@ test.describe('3D newspaper stack', () => {
     await expect.poll(() => page.locator('#scene').evaluate((el) => el.style.getPropertyValue('--rz'))).toMatch(/^\d/);
   });
 
+  test('confidence towers rise to each model confidence', async ({ page }) => {
+    await mockPredict(page, 200, { ml: prediction('REAL', 0.91), ai: prediction('FAKE', 0.62) });
+    await page.goto('/');
+    await fillForm(page);
+    await page.getByRole('button', { name: 'Analyze article' }).click();
+
+    await expect(page.locator('#ml-tower')).toHaveClass(/real/);
+    await expect(page.locator('#ai-tower')).toHaveClass(/fake/);
+    await expect(page.locator('#ml-tower')).toHaveAttribute('style', /--level: 0\.91/);
+    await expect(page.locator('#ai-tower')).toHaveAttribute('style', /--level: 0\.62/);
+    // The taller tower's top face really sits higher on screen.
+    await expect
+      .poll(async () => {
+        const a = await page.locator('#ml-tower .tower-top').boundingBox();
+        const b = await page.locator('#ai-tower .tower-top').boundingBox();
+        return a.y < b.y;
+      })
+      .toBe(true);
+  });
+
+  test('verdict cards flip in and the page scrolls to them', async ({ page }) => {
+    await mockPredict(page, 200, { ml: prediction('REAL', 0.9), ai: prediction('REAL', 0.8) });
+    await page.goto('/');
+    await fillForm(page);
+    await page.getByRole('button', { name: 'Analyze article' }).click();
+
+    await expect(page.locator('.models')).toHaveClass(/is-revealing/);
+    await expect(page.locator('#results-panel')).toBeInViewport();
+  });
+
+  test('on a phone, the scroll lands with the verdict heading fully on screen', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await mockPredict(page, 200, { ml: prediction('REAL', 0.9), ai: prediction('FAKE', 0.62) });
+    await page.goto('/');
+    await fillForm(page);
+    await page.getByRole('button', { name: 'Analyze article' }).click();
+
+    await expect(page.locator('#results-heading')).toBeInViewport({ ratio: 1 });
+    // Still there once the smooth scroll has settled.
+    await page.waitForTimeout(1500);
+    await expect(page.locator('#results-heading')).toBeInViewport({ ratio: 1 });
+  });
+
+  test('sections fold into view as they scroll in', async ({ page }) => {
+    await page.goto('/');
+    const methodBody = page.locator('.method .section-body');
+    await expect(methodBody).toHaveClass(/reveal/);
+    await methodBody.scrollIntoViewIfNeeded();
+    await expect(methodBody).toHaveClass(/is-visible/);
+  });
+
+  test('headline layers and grid floor follow the pointer', async ({ page }) => {
+    await page.goto('/');
+    await page.mouse.move(1200, 100);
+    await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue('--px'))).toMatch(/^0\.[1-9]/);
+  });
+
+  test('without motion, everything is shown at once and nothing follows the pointer', async ({ browser }) => {
+    const context = await browser.newContext({ reducedMotion: 'reduce' });
+    const page = await context.newPage();
+    await page.goto('/');
+    await page.mouse.move(1200, 100);
+    await expect(page.locator('.method .section-body')).not.toHaveClass(/reveal/);
+    expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--px'))).toBe('');
+    await context.close();
+  });
+
   test('is hidden from assistive technology', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('#scene')).toHaveAttribute('aria-hidden', 'true');
@@ -340,7 +407,11 @@ test.describe('mobile layout', () => {
           scrollWidth: document.documentElement.scrollWidth,
           innerWidth: window.innerWidth,
           cardsInside: cards.every((c) => c.right <= panel.right + 0.5),
-          stacked: cards[1].top >= cards[0].bottom,
+          // Layout positions, not the on-screen box, which the cards' flip-in animation distorts.
+          stacked: (() => {
+            const [a, b] = document.querySelectorAll('.model');
+            return b.offsetTop >= a.offsetTop + a.offsetHeight;
+          })(),
         };
       });
       expect(layout.scrollWidth).toBeLessThanOrEqual(layout.innerWidth);
@@ -351,8 +422,9 @@ test.describe('mobile layout', () => {
 });
 
 test.describe('accessibility', () => {
-  // axe is injected as an inline script, which the page's CSP correctly blocks.
-  test.use({ bypassCSP: true });
+  // axe is injected as an inline script, which the page's CSP correctly blocks. Reduced motion shows every
+  // section at once, so contrast is measured on the final page rather than mid-fade.
+  test.use({ bypassCSP: true, reducedMotion: 'reduce' });
 
   async function expectNoViolations(page) {
     await page.addScriptTag({ path: require.resolve('axe-core') });

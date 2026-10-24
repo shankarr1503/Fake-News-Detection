@@ -19,6 +19,10 @@ const summaryEl = document.getElementById('summary');
 const scene = document.getElementById('scene');
 const stampText = document.getElementById('stamp-text');
 const methodNumber = document.getElementById('method-number');
+const modelsEl = document.querySelector('.models');
+const hero = document.getElementById('hero');
+const root = document.documentElement;
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const fields = [
     {
@@ -61,6 +65,9 @@ for (const field of fields) {
 }
 
 setUpTilt();
+setUpScrollDepth();
+setUpReveal();
+setUpCardTilt();
 
 async function analyze() {
     if (inFlight) return;
@@ -100,6 +107,8 @@ async function analyze() {
             throw new Error('The API returned an unexpected response.');
         }
 
+        // Hide the loader first: removing it shifts the page, which would throw off the scroll to the results.
+        setLoading(false);
         showResults(data);
     } catch (error) {
         showError(error.message);
@@ -197,19 +206,23 @@ function formatDetail(data) {
 }
 
 function showResults(data) {
-    // Start the bars from zero and force a layout, so they animate to their new width on every result.
+    // Start the bars and towers from zero and force a layout, so they grow to their new size on every result.
     for (const prefix of ['ml', 'ai']) {
         document.getElementById(`${prefix}-bar`).style.width = '0%';
+        document.getElementById(`${prefix}-tower`).style.setProperty('--level', '0');
     }
     resultsPanel.hidden = false;
     methodNumber.textContent = '03';
+    modelsEl.classList.remove('is-revealing');
     void resultsPanel.offsetWidth;
+    modelsEl.classList.add('is-revealing');
 
     updateResult('ml', data.ml);
     updateResult('ai', data.ai);
     setScene(...stampFor(data.ml, data.ai));
     summaryEl.textContent = summarize(data.ml, data.ai);
     statusEl.textContent = `Results ready. ${summaryEl.textContent}`;
+    resultsPanel.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
 }
 
 // What the 3D stack's stamp shows: [scene state, stamp text].
@@ -242,10 +255,14 @@ function updateResult(prefix, data) {
     const barEl = document.getElementById(`${prefix}-bar`);
     const lowEl = document.getElementById(`${prefix}-low`);
     const captionEl = document.getElementById(`${prefix}-caption`);
+    const towerEl = document.getElementById(`${prefix}-tower`);
 
     const kind = data.label === 'REAL' ? 'real' : data.label === 'FAKE' ? 'fake' : 'unavailable';
     labelEl.textContent = kind === 'unavailable' ? 'Unavailable' : data.label;
     labelEl.className = `model-verdict ${kind}`;
+    towerEl.classList.remove('real', 'fake', 'unavailable');
+    towerEl.classList.add(kind);
+    towerEl.style.setProperty('--level', data.confidence === null ? '0' : String(data.confidence));
     barEl.className = `meter-fill ${kind}`;
 
     if (data.confidence === null || kind === 'unavailable') {
@@ -267,11 +284,10 @@ function updateResult(prefix, data) {
     lowEl.hidden = data.confidence >= LOW_CONFIDENCE;
 }
 
-// Tilt the 3D stack towards the pointer. Skipped for touch screens and reduced motion.
+// Tilt the 3D stack towards the pointer, and share the pointer position with the CSS as --px/--py
+// (the headline layers and the grid floor use it). Skipped for touch screens and reduced motion.
 function setUpTilt() {
-    const canTilt =
-        window.matchMedia('(pointer: fine)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!canTilt) return;
+    if (reducedMotion || !window.matchMedia('(pointer: fine)').matches) return;
 
     let frame = 0;
     window.addEventListener('pointermove', (event) => {
@@ -282,6 +298,70 @@ function setUpTilt() {
             const y = event.clientY / window.innerHeight - 0.5;
             scene.style.setProperty('--rx', `${(-y * 14).toFixed(2)}deg`);
             scene.style.setProperty('--rz', `${(x * 18).toFixed(2)}deg`);
+            root.style.setProperty('--px', x.toFixed(3));
+            root.style.setProperty('--py', y.toFixed(3));
         });
     });
+}
+
+// --scroll goes from 0 to 1 as the hero scrolls out of view; the headline and the stack turn with it.
+function setUpScrollDepth() {
+    if (reducedMotion) return;
+
+    let frame = 0;
+    const update = () => {
+        frame = 0;
+        const rect = hero.getBoundingClientRect();
+        const progress = Math.min(Math.max(-rect.top / rect.height, 0), 1);
+        root.style.setProperty('--scroll', progress.toFixed(3));
+    };
+    window.addEventListener(
+        'scroll',
+        () => {
+            if (!frame) frame = requestAnimationFrame(update);
+        },
+        { passive: true },
+    );
+    update();
+}
+
+// Sections fold up into place as they scroll into view.
+function setUpReveal() {
+    const targets = document.querySelectorAll('.section .section-label, .section .section-body');
+    if (reducedMotion || !('IntersectionObserver' in window)) return;
+
+    const observer = new IntersectionObserver(
+        (entries) => {
+            for (const entry of entries) {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('is-visible');
+                    observer.unobserve(entry.target);
+                }
+            }
+        },
+        { threshold: 0.12 },
+    );
+    for (const target of targets) {
+        target.classList.add('reveal');
+        observer.observe(target);
+    }
+}
+
+// Result cards lean towards the pointer.
+function setUpCardTilt() {
+    if (reducedMotion || !window.matchMedia('(pointer: fine)').matches) return;
+
+    for (const card of document.querySelectorAll('.model')) {
+        card.addEventListener('pointermove', (event) => {
+            const rect = card.getBoundingClientRect();
+            const x = (event.clientX - rect.left) / rect.width - 0.5;
+            const y = (event.clientY - rect.top) / rect.height - 0.5;
+            card.style.setProperty('--card-y', `${(x * 7).toFixed(2)}deg`);
+            card.style.setProperty('--card-x', `${(-y * 7).toFixed(2)}deg`);
+        });
+        card.addEventListener('pointerleave', () => {
+            card.style.setProperty('--card-y', '0deg');
+            card.style.setProperty('--card-x', '0deg');
+        });
+    }
 }

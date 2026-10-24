@@ -25,7 +25,13 @@
 
     <main>
         <section class="hero page grid" id="hero" aria-labelledby="headline">
-            <h1 id="headline" class="headline">Real<br>or fake<span class="headline-mark">?</span></h1>
+            <!-- The page's 12-column grid, laid down as a 3D floor that recedes behind the hero. -->
+            <div class="grid-floor" aria-hidden="true"><div class="grid-floor-plane"></div></div>
+
+            <h1 id="headline" class="headline">
+                <span class="headline-line headline-line-1">Real</span>
+                <span class="headline-line headline-line-2">or fake<span class="headline-mark">?</span></span>
+            </h1>
             <p class="intro">
                 Paste a news article. Two models trained on 6,335 political stories from the 2016 US election
                 each judge whether it reads like real or fake news, and how sure they are.
@@ -98,7 +104,14 @@
                 </form>
 
                 <div class="loading" id="loader" hidden>
-                    <span class="loading-track" aria-hidden="true"><span class="loading-fill"></span></span>
+                    <span class="cube" aria-hidden="true">
+                        <span class="cube-face cube-front"></span>
+                        <span class="cube-face cube-back"></span>
+                        <span class="cube-face cube-left"></span>
+                        <span class="cube-face cube-right"></span>
+                        <span class="cube-face cube-top"></span>
+                        <span class="cube-face cube-bottom"></span>
+                    </span>
                     <span>Reading the article</span>
                 </div>
                 <p class="visually-hidden" id="status" role="status"></p>
@@ -111,6 +124,25 @@
             <div class="section-label">
                 <span class="section-number">02</span>
                 <h2 id="results-heading">Verdict</h2>
+
+                <!-- Isometric chart: each model's confidence as a block rising from a grid. -->
+                <div class="towers-row">
+                    <div class="towers" id="towers" aria-hidden="true">
+                        <div class="towers-stage">
+                            <div class="towers-floor"></div>
+                            <div class="tower tower-a" id="ml-tower">
+                                <span class="tower-face tower-top"><span>A</span></span>
+                                <span class="tower-face tower-front"></span>
+                                <span class="tower-face tower-side"></span>
+                            </div>
+                            <div class="tower tower-b" id="ai-tower">
+                                <span class="tower-face tower-top"><span>B</span></span>
+                                <span class="tower-face tower-front"></span>
+                                <span class="tower-face tower-side"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="section-body">
